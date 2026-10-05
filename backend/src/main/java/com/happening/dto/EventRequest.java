@@ -17,7 +17,7 @@ public record EventRequest(
         @NotBlank String description,
         @NotNull @Positive Long categoryId,
         @NotNull @Positive Long cityId,
-        @NotNull @Positive Long organizerId,
+        Long organizerId,
         @NotBlank String venue,
         @NotNull LocalDate date,
         @NotNull LocalTime time,

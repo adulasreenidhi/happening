@@ -17,6 +17,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.Version;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
@@ -72,6 +73,9 @@ public class Event {
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
+
+    @Version
+    private Long version;
 
     @OneToMany(mappedBy = "event")
     private List<Booking> bookings = new ArrayList<>();
@@ -210,5 +214,9 @@ public class Event {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public List<Review> getReviews() {
+        return reviews;
     }
 }

@@ -1,6 +1,9 @@
 package com.happening.backend;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -23,6 +26,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.core.MethodParameter;
+import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.method.support.ModelAndViewContainer;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.User;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 import com.happening.controller.EventController;
@@ -47,17 +59,37 @@ class BackendApplicationTests {
         mockMvc = MockMvcBuilders.standaloneSetup(new EventController(eventService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(validator)
+                .setCustomArgumentResolvers(new HandlerMethodArgumentResolver() {
+                    @Override
+                    public boolean supportsParameter(MethodParameter parameter) {
+                        return parameter.hasParameterAnnotation(AuthenticationPrincipal.class);
+                    }
+
+                    @Override
+                    public Object resolveArgument(
+                            MethodParameter parameter,
+                            ModelAndViewContainer container,
+                            NativeWebRequest request,
+                            org.springframework.web.bind.support.WebDataBinderFactory binderFactory) {
+                        return User.withUsername("organizer@example.com")
+                                .password("")
+                                .roles("ORGANIZER")
+                                .build();
+                    }
+                }, new PageableHandlerMethodArgumentResolver())
                 .build();
     }
 
     @Test
     void listsEvents() throws Exception {
-        when(eventService.getAllEvents()).thenReturn(List.of(event()));
+        when(eventService.searchPublicEvents(any(), any()))
+                .thenReturn(new PageImpl<>(List.of(event()), PageRequest.of(0, 12), 1));
 
         mockMvc.perform(get("/api/events"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(12))
-                .andExpect(jsonPath("$[0].categoryId").value(3));
+                .andExpect(jsonPath("$.content[0].id").value(12))
+                .andExpect(jsonPath("$.content[0].categoryId").value(3))
+                .andExpect(jsonPath("$.totalElements").value(1));
     }
 
     @Test
@@ -82,7 +114,7 @@ class BackendApplicationTests {
 
     @Test
     void createsEvent() throws Exception {
-        when(eventService.createEvent(any())).thenReturn(event());
+        when(eventService.createEvent(any(), anyString(), anyBoolean())).thenReturn(event());
 
         mockMvc.perform(post("/api/events")
                         .contentType("application/json")
@@ -91,12 +123,12 @@ class BackendApplicationTests {
                 .andExpect(jsonPath("$.id").value(12))
                 .andExpect(jsonPath("$.status").value("PENDING"));
 
-        verify(eventService).createEvent(any());
+        verify(eventService).createEvent(any(), eq("organizer@example.com"), eq(false));
     }
 
     @Test
     void updatesEvent() throws Exception {
-        when(eventService.updateEvent(org.mockito.ArgumentMatchers.eq(12L), any()))
+        when(eventService.updateEvent(org.mockito.ArgumentMatchers.eq(12L), any(), anyString(), anyBoolean()))
                 .thenReturn(event());
 
         mockMvc.perform(put("/api/events/12")
@@ -111,7 +143,7 @@ class BackendApplicationTests {
         mockMvc.perform(delete("/api/events/12"))
                 .andExpect(status().isNoContent());
 
-        verify(eventService).deleteEvent(12L);
+        verify(eventService).deleteEvent(12L, "organizer@example.com", false);
     }
 
     @Test
@@ -130,7 +162,9 @@ class BackendApplicationTests {
                 "City Festival",
                 "An outdoor event",
                 3L,
+                "Music",
                 4L,
+                "Pune",
                 5L,
                 "Central Park",
                 LocalDate.of(2026, 11, 15),
@@ -140,7 +174,9 @@ class BackendApplicationTests {
                 300,
                 null,
                 EventStatus.PENDING,
-                LocalDateTime.of(2026, 10, 5, 9, 0));
+                LocalDateTime.of(2026, 10, 5, 9, 0),
+                0.0,
+                0);
     }
 
     private String validEventRequest() {

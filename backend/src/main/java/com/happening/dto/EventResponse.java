@@ -13,7 +13,9 @@ public record EventResponse(
         String title,
         String description,
         Long categoryId,
+        String categoryName,
         Long cityId,
+        String cityName,
         Long organizerId,
         String venue,
         LocalDate date,
@@ -23,7 +25,9 @@ public record EventResponse(
         Integer availableSeats,
         String imageUrl,
         EventStatus status,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        Double averageRating,
+        long ratingCount) {
 
     public static EventResponse from(Event event) {
         return new EventResponse(
@@ -31,7 +35,9 @@ public record EventResponse(
                 event.getTitle(),
                 event.getDescription(),
                 event.getCategory().getId(),
+                event.getCategory().getName(),
                 event.getCity().getId(),
+                event.getCity().getName(),
                 event.getOrganizer().getId(),
                 event.getVenue(),
                 event.getDate(),
@@ -41,6 +47,11 @@ public record EventResponse(
                 event.getAvailableSeats(),
                 event.getImageUrl(),
                 event.getStatus(),
-                event.getCreatedAt());
+                event.getCreatedAt(),
+                event.getReviews().stream()
+                        .mapToInt(review -> review.getRating())
+                        .average()
+                        .orElse(0.0),
+                event.getReviews().size());
     }
 }
