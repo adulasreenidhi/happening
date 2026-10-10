@@ -43,42 +43,49 @@ For the Compose setup: Docker Engine and the Docker Compose plugin.
 
 ## Run locally without Docker
 
-1. Create the `happening_db` database by running [`database/create-database.sql`](database/create-database.sql).
-2. In the backend terminal, configure `DB_USERNAME`, `DB_PASSWORD`, and a strong Base64-encoded `JWT_SECRET` of at least 32 bytes. Optionally configure the AI provider key. For example, in PowerShell:
+1. Start MySQL and create the `happening_db` database by running [`database/create-database.sql`](database/create-database.sql).
+2. Create a local environment file from the template:
 
    ```powershell
-   $env:DB_USERNAME = "your_mysql_user"
-   $env:DB_PASSWORD = "your_mysql_password"
-   $jwtBytes = New-Object byte[] 32
-   [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($jwtBytes)
-   $env:JWT_SECRET = [Convert]::ToBase64String($jwtBytes)
-   # Optional: $env:OPENAI_API_KEY = "your_server_side_provider_key"
+   cd C:\path\to\happening
+   Copy-Item .env.example .env
    ```
 
-   `DB_URL` defaults to `jdbc:mysql://localhost:3306/happening_db`. Do not put credentials in tracked property files.
-3. Start the backend:
+   Set `DB_USERNAME` and `DB_PASSWORD` to credentials for your local MySQL instance. `.env` is ignored by Git. Spring Boot does **not** load `.env` automatically; use the backend launcher below to load it into the process environment.
+3. Start the backend from the backend directory:
 
    ```powershell
-   cd backend
-   .\mvnw.cmd spring-boot:run
+   cd C:\path\to\happening\backend
+   .\run-local.ps1
    ```
 
+   The launcher validates a configured `JWT_SECRET` without printing it. If it is blank, it creates a cryptographically random 32-byte key for this local run only; tokens become invalid when the backend restarts. For tokens that remain valid across restarts, generate a new key and store it in the ignored `.env`:
+
+   ```powershell
+   $keyBytes = New-Object byte[] 32
+   $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+   try { $rng.GetBytes($keyBytes) } finally { $rng.Dispose() }
+   $jwtSecret = [Convert]::ToBase64String($keyBytes)
+   $env:JWT_SECRET = $jwtSecret
+   ```
+
+   To persist that generated value, set `JWT_SECRET` in `.env` using a local secrets manager or a secure editor; do not add the populated file to Git. `DB_URL` defaults to `jdbc:mysql://localhost:3306/happening_db`. Optional AI provider credentials can also be set in `.env`.
 4. In another terminal, install and run the frontend:
 
    ```powershell
-   cd frontend
+   cd C:\path\to\happening\frontend
    Copy-Item .env.example .env.local
    npm ci
-   npm run dev
+   npm run dev -- --host 127.0.0.1
    ```
 
-   The local Vite API base URL defaults to `http://localhost:8080/api`; configure `VITE_API_BASE_URL` in `frontend/.env.local` only when it differs.
+   The local Vite API base URL is `/api`; Vite proxies API calls to `http://localhost:8080`. This same-origin proxy avoids browser CORS failures when Vite selects a different port or uses `127.0.0.1` instead of `localhost`. Keep the relative `/api` URL in `frontend/.env.local` for local development.
 
 Hibernate uses `ddl-auto=update` for development. The test profile uses isolated in-memory H2. Production schema creation/update is configurable with `JPA_DDL_AUTO`; use `update` for a first clean Compose launch, and use a reviewed schema migration plus `validate` for a managed production database.
 
 ## Environment variables
 
-Copy [`.env.example`](.env.example) to `.env` for Compose and replace the blank required values. `.env` is ignored by Git.
+Copy [`.env.example`](.env.example) to `.env` for Compose and replace the blank required values. `.env` is ignored by Git. Spring Boot does not read this file by itself; the local backend launcher explicitly loads its settings, while Compose reads it for container configuration.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
@@ -97,7 +104,7 @@ Copy [`.env.example`](.env.example) to `.env` for Compose and replace the blank 
 | `FRONTEND_BIND_ADDRESS` | No | Frontend host binding; defaults to `127.0.0.1` for use behind a local TLS proxy |
 | `FRONTEND_PORT`, `BACKEND_PORT`, `MYSQL_HOST_PORT` | No | Host ports; defaults to 8081, 8080, and 3307 |
 
-Never add populated environment files, API keys, database passwords, or signing secrets to source control. In hosted production, use the hosting provider's secret manager and terminate TLS at a trusted reverse proxy/load balancer.
+Never add populated environment files, API keys, database passwords, or signing secrets to source control. In production, provide a unique Base64-encoded JWT key generated from at least 32 cryptographically random bytes through the deployment platform's environment/secret manager as `JWT_SECRET`. Do not use the local launcher or a development key in production. Terminate TLS at a trusted reverse proxy/load balancer.
 
 For a local demo, self-register the initial administrator and organizer accounts as USER accounts, then have a trusted database operator promote only those known rows. For example, connect to the MySQL service interactively and run:
 

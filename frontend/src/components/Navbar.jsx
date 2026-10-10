@@ -1,35 +1,54 @@
-import { Link } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+
+function NavigationLink({ to, end = false, children, className = "" }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) => `navigation-link${isActive ? " is-active" : ""}${className ? ` ${className}` : ""}`}
+    >
+      {children}
+    </NavLink>
+  );
+}
 
 function Navbar() {
   const { user, logout } = useAuth();
 
   return (
-    <nav>
-      <Link className="brand" to="/" aria-label="HAPPENING home">
-        <span className="brand-mark" aria-hidden="true">H</span>
-        HAPPENING
-      </Link>
-      <div className="nav-links">
-        <Link to="/">Home</Link>
-        <Link to="/events">Events</Link>
-        {user ? (
-          <>
-            <Link to="/assistant">AI assistant</Link>
-            {user.role === "USER" && <Link to="/dashboard">Dashboard</Link>}
-            {["ORGANIZER", "ADMIN"].includes(user.role) && <Link to="/organizer">Organizer</Link>}
-            {user.role === "ADMIN" && <Link to="/admin">Admin</Link>}
-            <Link to="/account" className="nav-account">{user.name}</Link>
-            <button className="nav-logout" type="button" onClick={logout}>Log out</button>
-          </>
-        ) : (
-          <>
-            <Link to="/login">Log in</Link>
-            <Link className="nav-register" to="/register">Sign up</Link>
-          </>
-        )}
-      </div>
-    </nav>
+    <header className="site-header">
+      <nav className="site-nav" aria-label="Main navigation">
+        <Link className="brand" to="/" aria-label="HAPPENING home">
+          <span className="brand-mark" aria-hidden="true">H</span>
+          <span>HAPPENING</span>
+        </Link>
+        <div className="nav-links nav-discovery" aria-label="Discover">
+          <NavigationLink to="/" end>Home</NavigationLink>
+          <NavigationLink to="/events">Events</NavigationLink>
+          <NavigationLink to="/categories">Categories</NavigationLink>
+          <NavigationLink to="/cities">Cities</NavigationLink>
+          <NavigationLink to="/about">About</NavigationLink>
+        </div>
+        <div className="nav-links nav-account-links" aria-label={user ? "Your account" : "Sign in"}>
+          {user ? (
+            <>
+              <NavigationLink to="/assistant">AI assistant</NavigationLink>
+              {user.role === "USER" && <NavigationLink to="/dashboard">Dashboard</NavigationLink>}
+              {["ORGANIZER", "ADMIN"].includes(user.role) && <NavigationLink to="/organizer">Organizer</NavigationLink>}
+              {user.role === "ADMIN" && <NavigationLink to="/admin">Admin</NavigationLink>}
+              <NavigationLink to="/account" className="nav-account">{user.name}</NavigationLink>
+              <button className="nav-logout" type="button" onClick={logout}>Log out</button>
+            </>
+          ) : (
+            <>
+              <NavigationLink to="/login">Log in</NavigationLink>
+              <NavigationLink to="/register" className="nav-register">Sign up <span aria-hidden="true">↗</span></NavigationLink>
+            </>
+          )}
+        </div>
+      </nav>
+    </header>
   );
 }
 

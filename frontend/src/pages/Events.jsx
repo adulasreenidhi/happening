@@ -21,6 +21,8 @@ function Events() {
   const currentPage = Math.max(0, Number(searchParams.get("page") ?? 0));
   const sort = searchParams.get("sort") ?? "date,asc";
   const queryKey = searchParams.toString();
+  const activeFilterCount = ["search", "city", "category", "date", "fromDate", "toDate", "free", "available"]
+    .filter((key) => searchParams.has(key) && searchParams.get(key)).length;
 
   useEffect(() => {
     let active = true;
@@ -114,60 +116,66 @@ function Events() {
         <h1>Events worth <em>showing up for.</em></h1>
         <p>Find something good happening around you.</p>
       </div>
-      <div className="events-filter">
-        <label>
-          <span>Search</span>
-          <input aria-label="Search events" placeholder="Title or description" value={search} onChange={(event) => updateFilter("search", event.target.value)} />
-        </label>
-        <label>
-          <span>City</span>
-          <select aria-label="Filter by city" value={city} onChange={(event) => updateFilter("city", event.target.value)}>
-            <option value="">All cities</option>
-            {cities.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Category</span>
-          <select aria-label="Filter by category" value={category} onChange={(event) => updateFilter("category", event.target.value)}>
-            <option value="">All categories</option>
-            {categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>On date</span>
-          <input aria-label="Filter by date" type="date" value={searchParams.get("date") ?? ""} onChange={(event) => updateFilter("date", event.target.value)} />
-        </label>
-        <label>
-          <span>From</span>
-          <input aria-label="Filter from date" type="date" value={searchParams.get("fromDate") ?? ""} onChange={(event) => updateFilter("fromDate", event.target.value)} />
-        </label>
-        <label>
-          <span>To</span>
-          <input aria-label="Filter to date" type="date" value={searchParams.get("toDate") ?? ""} onChange={(event) => updateFilter("toDate", event.target.value)} />
-        </label>
-        <label>
-          <span>Price</span>
-          <select aria-label="Filter by price" value={searchParams.get("free") ?? ""} onChange={(event) => updateFilter("free", event.target.value)}>
-            <option value="">Any price</option><option value="true">Free</option><option value="false">Paid</option>
-          </select>
-        </label>
-        <label>
-          <span>Availability</span>
-          <select aria-label="Filter by availability" value={searchParams.get("available") ?? ""} onChange={(event) => updateFilter("available", event.target.value)}>
-            <option value="">Any availability</option><option value="true">Seats available</option><option value="false">Sold out</option>
-          </select>
-        </label>
-        <label>
-          <span>Sort by</span>
-          <select aria-label="Sort events" value={sort} onChange={(event) => updateFilter("sort", event.target.value)}>
-            <option value="date,asc">Soonest date</option>
-            <option value="date,desc">Latest date</option>
-            <option value="price,asc">Price: low to high</option>
-            <option value="price,desc">Price: high to low</option>
-            <option value="createdAt,desc">Recently added</option>
-          </select>
-        </label>
-      </div>
+      <details className="events-filter-disclosure" open={activeFilterCount > 0}>
+        <summary>
+          <span>Refine your search</span>
+          {activeFilterCount > 0 && <span className="active-filter-count">{activeFilterCount} active</span>}
+        </summary>
+        <div className="events-filter">
+          <label>
+            <span>Search</span>
+            <input aria-label="Search events" placeholder="Title or description" value={search} onChange={(event) => updateFilter("search", event.target.value)} />
+          </label>
+          <label>
+            <span>City</span>
+            <select aria-label="Filter by city" value={city} onChange={(event) => updateFilter("city", event.target.value)}>
+              <option value="">All cities</option>
+              {cities.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Category</span>
+            <select aria-label="Filter by category" value={category} onChange={(event) => updateFilter("category", event.target.value)}>
+              <option value="">All categories</option>
+              {categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>On date</span>
+            <input aria-label="Filter by date" type="date" value={searchParams.get("date") ?? ""} onChange={(event) => updateFilter("date", event.target.value)} />
+          </label>
+          <label>
+            <span>From</span>
+            <input aria-label="Filter from date" type="date" value={searchParams.get("fromDate") ?? ""} onChange={(event) => updateFilter("fromDate", event.target.value)} />
+          </label>
+          <label>
+            <span>To</span>
+            <input aria-label="Filter to date" type="date" value={searchParams.get("toDate") ?? ""} onChange={(event) => updateFilter("toDate", event.target.value)} />
+          </label>
+          <label>
+            <span>Price</span>
+            <select aria-label="Filter by price" value={searchParams.get("free") ?? ""} onChange={(event) => updateFilter("free", event.target.value)}>
+              <option value="">Any price</option><option value="true">Free</option><option value="false">Paid</option>
+            </select>
+          </label>
+          <label>
+            <span>Availability</span>
+            <select aria-label="Filter by availability" value={searchParams.get("available") ?? ""} onChange={(event) => updateFilter("available", event.target.value)}>
+              <option value="">Any availability</option><option value="true">Seats available</option><option value="false">Sold out</option>
+            </select>
+          </label>
+          <label>
+            <span>Sort by</span>
+            <select aria-label="Sort events" value={sort} onChange={(event) => updateFilter("sort", event.target.value)}>
+              <option value="date,asc">Soonest date</option>
+              <option value="date,desc">Latest date</option>
+              <option value="price,asc">Price: low to high</option>
+              <option value="price,desc">Price: high to low</option>
+              <option value="createdAt,desc">Recently added</option>
+            </select>
+          </label>
+        </div>
+      </details>
       {isLoading ? (
         <p className="state-message" role="status">Finding what’s happening…</p>
       ) : error ? (

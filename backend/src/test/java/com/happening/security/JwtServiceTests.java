@@ -65,4 +65,11 @@ class JwtServiceTests {
     void requiresStrongBase64Secret() {
         assertThrows(IllegalStateException.class, () -> new JwtService("short", 60_000));
     }
+
+    @Test
+    void rejectsBase64SecretShorterThan32DecodedBytes() {
+        String shortSecret = Base64.getEncoder().encodeToString(new byte[31]);
+
+        assertThrows(IllegalStateException.class, () -> new JwtService(shortSecret, 60_000));
+    }
 }
