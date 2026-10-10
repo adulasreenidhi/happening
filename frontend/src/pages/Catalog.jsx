@@ -28,34 +28,67 @@ function Catalog({ type }) {
   }, [isCategories, label]);
 
   return (
-    <section className="section catalog-page">
+    <div className="catalog-index-page container">
       <div className="page-heading">
-        <span className="eyebrow">EXPLORE HAPPENING</span>
-        <h1>{isCategories ? "Find your kind of " : "Explore events by "}<em>{isCategories ? "event." : "city."}</em></h1>
-        <p>{isCategories ? "Browse the interests and experiences bringing people together." : "See what’s on in the places you love."}</p>
+        <span className="eyebrow">
+          <span className="eyebrow-dot" />
+          {isCategories ? "INTEREST DIRECTORY" : "CITY DIRECTORY"}
+        </span>
+        <h1>
+          {isCategories ? "Discover by " : "Explore events in your "}
+          <em>{isCategories ? "interest." : "city."}</em>
+        </h1>
+        <p>
+          {isCategories
+            ? "Browse cultural categories, musical genres, and educational workshops bringing people together."
+            : "See what’s happening in urban hubs across the country."}
+        </p>
       </div>
+
       {loading ? (
         <p className="state-message" role="status">Loading {label}…</p>
       ) : error ? (
-        <p className="error-message" role="alert">{error}</p>
+        <div className="state-panel error-message" role="alert">
+          {error}
+        </div>
       ) : items.length === 0 ? (
-        <div className="empty-state"><h2>No {label} to show yet.</h2><p>Check back soon as HAPPENING grows.</p></div>
+        <div className="empty-state">
+          <div className="empty-state-icon">✦</div>
+          <h2>No {label} to show right now.</h2>
+          <p>Check back shortly as new listings and destinations are added to HAPPENING.</p>
+          <Link className="button button-dark" to="/events">
+            Browse all events →
+          </Link>
+        </div>
       ) : (
-        <div className="category-grid">
+        <div className="catalog-directory-grid">
           {items.map((item, index) => (
             <Link
-              className="category-tile"
               key={item.id}
+              className="catalog-index-tile"
               to={`/events?${isCategories ? "category" : "city"}=${encodeURIComponent(item.name)}`}
             >
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <strong>{item.name}</strong>
-              <span className="category-arrow" aria-hidden="true">↗</span>
+              <span className="tile-index-num">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <div className="tile-title-wrap">
+                <strong className="tile-name">{item.name}</strong>
+                <span className="tile-sublabel">
+                  {isCategories ? "Browse category" : "Explore city"}
+                </span>
+              </div>
+              <span className="tile-arrow" aria-hidden="true">↗</span>
             </Link>
           ))}
         </div>
       )}
-    </section>
+
+      <div className="catalog-footer-nav">
+        <Link className="text-link" to="/events">
+          ← View full event directory
+        </Link>
+      </div>
+    </div>
   );
 }
 

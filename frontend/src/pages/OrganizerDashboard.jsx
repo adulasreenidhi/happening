@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { createEvent, deleteEvent, getCategories, getCities, updateEvent } from "../services/events";
 import { getOrganizerBookings, getOrganizerDashboard, getOrganizerEvents } from "../services/platform";
+import StatusBadge from "../components/StatusBadge";
+import { ConfirmModal } from "../components/Modal";
 
 const emptyForm = {
   title: "",
@@ -27,6 +30,9 @@ function OrganizerDashboard() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [eventToDelete, setEventToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState("events"); // 'events' | 'create' | 'bookings'
 
   const refresh = useCallback(async () => {
     const [dashboard, eventList, bookingList, categoryList, cityList] = await Promise.all([
@@ -82,12 +88,13 @@ function OrganizerDashboard() {
       cityId: String(event.cityId),
       venue: event.venue,
       date: event.date,
-      time: event.time.slice(0, 5),
+      time: event.time ? event.time.slice(0, 5) : "",
       price: String(event.price),
       capacity: String(event.capacity),
       imageUrl: event.imageUrl ?? "",
     });
-    document.getElementById("organizer-event-form")?.scrollIntoView({ behavior: "smooth" });
+    setActiveTab("create");
+    window.scrollTo({ top: 300, behavior: "smooth" });
   }
 
   function cancelEdit() {
@@ -96,8 +103,8 @@ function OrganizerDashboard() {
     setError("");
   }
 
-  async function saveEvent(eventObject) {
-    eventObject.preventDefault();
+  async function saveEvent(e) {
+    e.preventDefault();
     setSaving(true);
     setError("");
     setMessage("");
@@ -112,100 +119,491 @@ function OrganizerDashboard() {
     try {
       if (editingId) {
         await updateEvent(editingId, payload);
-        setMessage("Event updated.");
+        setMessage("Event successfully updated.");
       } else {
         const { data } = await createEvent(payload);
-        setMessage(`Event created and submitted for review (${data.status}).`);
+        setMessage(`Event created and submitted for administrative review (${data.status}).`);
       }
       setForm(emptyForm);
       setEditingId(null);
       await refresh();
+      setActiveTab("events");
     } catch (requestError) {
-      setError(requestError.response?.data?.message ?? "Event could not be saved.");
+      setError(requestError.response?.data?.message ?? "Event could not be saved. Please check the form fields.");
     } finally {
       setSaving(false);
     }
   }
 
-  async function removeEvent(event) {
-    if (!window.confirm(`Delete “${event.title}”? This action cannot be undone.`)) return;
+  async function handleConfirmDelete() {
+    if (!eventToDelete) return;
     setError("");
+    setDeleting(true);
     try {
-      await deleteEvent(event.id);
-      setMessage("Event deleted.");
+      await deleteEvent(eventToDelete.id);
+      setMessage(`Event “${eventToDelete.title}” deleted.`);
+      setEventToDelete(null);
       await refresh();
     } catch (requestError) {
       setError(requestError.response?.data?.message ?? "Event could not be deleted.");
+    } finally {
+      setDeleting(false);
     }
   }
 
-  if (loading) return <p className="state-message" role="status">Loading organizer dashboard…</p>;
+  if (loading) {
+    return (
+      <div className="section container">
+        <p className="state-message" role="status">Loading Organizer Studio…</p>
+      </div>
+    );
+  }
 
   return (
-    <section className="section dashboard-page">
-      <span className="eyebrow">ORGANIZER STUDIO</span>
-      <h1>Your events, <em>your people.</em></h1>
-      {error && <p className="error-message" role="alert">{error}</p>}
-      {message && <p className="success-message" role="status">{message}</p>}
-      <div className="dashboard-stat-grid">
-        <article><span>Total events</span><strong>{summary?.totalEvents ?? 0}</strong></article>
-        <article><span>Upcoming events</span><strong>{summary?.upcomingEvents ?? 0}</strong></article>
-        <article><span>Registrations</span><strong>{summary?.registrations ?? 0}</strong></article>
-        <article><span>Available seats</span><strong>{summary?.availableSeats ?? 0}</strong></article>
+    <div className="operations-page container">
+      {/* Workspace Header */}
+      <div className="operations-header">
+        <div>
+          <span className="eyebrow">
+            <span className="eyebrow-dot" />
+            ORGANIZER WORKSPACE
+          </span>
+          <h1>Event <em>Operations Studio.</em></h1>
+          <p>Create, manage, and monitor registration capacity for your hosted city events.</p>
+        </div>
+
+        <button
+          type="button"
+          className="button button-dark"
+          onClick={() => {
+            setEditingId(null);
+            setForm(emptyForm);
+            setActiveTab("create");
+          }}
+        >
+          + Create New Event
+        </button>
       </div>
 
-      <section className="dashboard-panel">
-        <h2>{editingId ? "Edit event" : "Create an event"}</h2>
-        <p>New events are submitted as pending for admin review.</p>
-        <form id="organizer-event-form" className="dashboard-form" onSubmit={saveEvent}>
-          <label>Title<input required maxLength="150" value={form.title} onChange={(change) => setForm({ ...form, title: change.target.value })} /></label>
-          <label>Description<textarea required maxLength="10000" value={form.description} onChange={(change) => setForm({ ...form, description: change.target.value })} /></label>
-          <label>Category<select required value={form.categoryId} onChange={(change) => setForm({ ...form, categoryId: change.target.value })}><option value="">Choose category</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          <label>City<select required value={form.cityId} onChange={(change) => setForm({ ...form, cityId: change.target.value })}><option value="">Choose city</option>{cities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          <label>Venue<input required maxLength="200" value={form.venue} onChange={(change) => setForm({ ...form, venue: change.target.value })} /></label>
-          <label>Date<input type="date" required value={form.date} onChange={(change) => setForm({ ...form, date: change.target.value })} /></label>
-          <label>Time<input type="time" required value={form.time} onChange={(change) => setForm({ ...form, time: change.target.value })} /></label>
-          <label>Price<input type="number" min="0" step="0.01" required value={form.price} onChange={(change) => setForm({ ...form, price: change.target.value })} /></label>
-          <label>Capacity<input type="number" min="1" step="1" required value={form.capacity} onChange={(change) => setForm({ ...form, capacity: change.target.value })} /></label>
-          <label>Image URL<input type="url" value={form.imageUrl} onChange={(change) => setForm({ ...form, imageUrl: change.target.value })} /></label>
-          <div className="dashboard-form-actions">
-            <button className="button button-dark" disabled={saving}>{saving ? "Saving…" : editingId ? "Save changes" : "Create event"}</button>
-            {editingId && <button className="button button-light" type="button" onClick={cancelEdit}>Cancel edit</button>}
-          </div>
-        </form>
-      </section>
+      {error && <div className="state-panel error-message" role="alert">{error}</div>}
+      {message && <div className="state-panel success-message" role="status">{message}</div>}
 
-      <section className="dashboard-panel">
-        <h2>My events</h2>
-        {events.length === 0 ? <p>You have not created any events yet.</p> : (
-          <div className="dashboard-list">
-            {events.map((event) => (
-              <article className="dashboard-list-row" key={event.id}>
-                <div><strong>{event.title}</strong><span>{event.date} · {event.status} · {event.availableSeats}/{event.capacity} seats</span></div>
-                <div className="row-actions">
-                  <button type="button" onClick={() => editEvent(event)}>Edit</button>
-                  <button className="danger-action" type="button" onClick={() => removeEvent(event)}>Delete</button>
+      {/* Operational KPI Metric Strip */}
+      <div className="operations-kpi-grid">
+        <div className="kpi-card">
+          <span className="kpi-label">Total Events</span>
+          <strong className="kpi-value">{summary?.totalEvents ?? 0}</strong>
+          <span className="kpi-subtext">All created listings</span>
+        </div>
+
+        <div className="kpi-card">
+          <span className="kpi-label">Upcoming Events</span>
+          <strong className="kpi-value">{summary?.upcomingEvents ?? 0}</strong>
+          <span className="kpi-subtext">Active on calendar</span>
+        </div>
+
+        <div className="kpi-card">
+          <span className="kpi-label">Total Registrations</span>
+          <strong className="kpi-value">{summary?.registrations ?? 0}</strong>
+          <span className="kpi-subtext">Reserved tickets</span>
+        </div>
+
+        <div className="kpi-card">
+          <span className="kpi-label">Seats Available</span>
+          <strong className="kpi-value">{summary?.availableSeats ?? 0}</strong>
+          <span className="kpi-subtext">Remaining capacity</span>
+        </div>
+      </div>
+
+      {/* Operations Segmented Tabs */}
+      <div className="operations-tabs" role="tablist" aria-label="Organizer sections">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "events"}
+          className={`tab-btn ${activeTab === "events" ? "is-active" : ""}`}
+          onClick={() => setActiveTab("events")}
+        >
+          My Events ({events.length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "create"}
+          className={`tab-btn ${activeTab === "create" ? "is-active" : ""}`}
+          onClick={() => setActiveTab("create")}
+        >
+          {editingId ? "Edit Event" : "Create Event"}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "bookings"}
+          className={`tab-btn ${activeTab === "bookings" ? "is-active" : ""}`}
+          onClick={() => setActiveTab("bookings")}
+        >
+          Registrations ({bookings.length})
+        </button>
+      </div>
+
+      {/* TAB 1: MY EVENTS LIST */}
+      {activeTab === "events" && (
+        <section className="operations-panel">
+          <div className="operations-panel-header">
+            <div>
+              <h2>Hosted events</h2>
+              <p>All events managed under your organizer profile.</p>
+            </div>
+          </div>
+
+          {events.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">✦</div>
+              <h3>No events hosted yet</h3>
+              <p>Ready to host an experience? Create your first event listing to get started.</p>
+              <button
+                type="button"
+                className="button button-dark"
+                onClick={() => setActiveTab("create")}
+              >
+                Create an event
+              </button>
+            </div>
+          ) : (
+            <div className="operations-table-wrap">
+              <table className="operations-table">
+                <thead>
+                  <tr>
+                    <th>Event Details</th>
+                    <th>Date & City</th>
+                    <th>Capacity / Seats</th>
+                    <th>Status</th>
+                    <th className="th-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((ev) => (
+                    <tr key={ev.id}>
+                      <td>
+                        <strong className="table-title">
+                          <Link to={`/events/${ev.id}`}>{ev.title}</Link>
+                        </strong>
+                        <span className="table-sub">{ev.venue}</span>
+                      </td>
+                      <td>
+                        <span>{ev.date}</span>
+                        <span className="table-sub">{ev.cityName || "City"}</span>
+                      </td>
+                      <td>
+                        <span>{ev.availableSeats} of {ev.capacity} left</span>
+                        <span className="table-sub">
+                          {Number(ev.price) === 0 ? "Free admission" : `₹${ev.price}`}
+                        </span>
+                      </td>
+                      <td>
+                        <StatusBadge status={ev.status} />
+                      </td>
+                      <td>
+                        <div className="table-action-group">
+                          <button
+                            type="button"
+                            className="button button-light btn-sm"
+                            onClick={() => editEvent(ev)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="button btn-danger btn-sm"
+                            onClick={() => setEventToDelete(ev)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* TAB 2: CREATE / EDIT EVENT FORM */}
+      {activeTab === "create" && (
+        <section className="operations-panel">
+          <div className="operations-panel-header">
+            <div>
+              <h2>{editingId ? "Edit Event Listing" : "Create New Event"}</h2>
+              <p>New events are submitted as pending for administrative moderation.</p>
+            </div>
+            {editingId && (
+              <button
+                type="button"
+                className="button button-light btn-sm"
+                onClick={cancelEdit}
+              >
+                Cancel edit
+              </button>
+            )}
+          </div>
+
+          <form id="organizer-event-form" className="grouped-event-form" onSubmit={saveEvent}>
+            {/* Section 1: Basic Information */}
+            <fieldset className="form-section-fieldset">
+              <legend className="form-section-legend">
+                <span className="legend-step">1</span>
+                Basic Information
+              </legend>
+
+              <div className="form-field">
+                <span>Event Title</span>
+                <input
+                  required
+                  maxLength={150}
+                  value={form.title}
+                  placeholder="e.g. City Jazz Under The Stars"
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-field">
+                  <span>Category</span>
+                  <select
+                    required
+                    value={form.categoryId}
+                    onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+                  >
+                    <option value="">Select a category</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
                 </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
 
-      <section className="dashboard-panel">
-        <h2>Registrations</h2>
-        {bookings.length === 0 ? <p>No registrations yet.</p> : (
-          <div className="dashboard-list">
-            {bookings.map((booking) => (
-              <article className="dashboard-list-row" key={booking.id}>
-                <div><strong>{booking.eventTitle}</strong><span>{booking.attendeeName} · {booking.quantity} ticket(s) · {booking.bookingStatus}</span></div>
-                <span>{booking.createdAt ? new Date(booking.createdAt).toLocaleDateString() : ""}</span>
-              </article>
-            ))}
+                <div className="form-field">
+                  <span>Target City</span>
+                  <select
+                    required
+                    value={form.cityId}
+                    onChange={(e) => setForm({ ...form, cityId: e.target.value })}
+                  >
+                    <option value="">Select a city</option>
+                    {cities.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-field">
+                <span>Detailed Description</span>
+                <textarea
+                  required
+                  rows="5"
+                  maxLength={10000}
+                  value={form.description}
+                  placeholder="Provide an overview of the event, what attendees should expect, prerequisites, etc."
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                />
+              </div>
+            </fieldset>
+
+            {/* Section 2: Location & Timing */}
+            <fieldset className="form-section-fieldset">
+              <legend className="form-section-legend">
+                <span className="legend-step">2</span>
+                Location & Schedule
+              </legend>
+
+              <div className="form-field">
+                <span>Venue Name & Address</span>
+                <input
+                  required
+                  maxLength={200}
+                  value={form.venue}
+                  placeholder="e.g. National Center for the Arts, Hall B"
+                  onChange={(e) => setForm({ ...form, venue: e.target.value })}
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-field">
+                  <span>Event Date</span>
+                  <input
+                    type="date"
+                    required
+                    value={form.date}
+                    onChange={(e) => setForm({ ...form, date: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-field">
+                  <span>Start Time</span>
+                  <input
+                    type="time"
+                    required
+                    value={form.time}
+                    onChange={(e) => setForm({ ...form, time: e.target.value })}
+                  />
+                </div>
+              </div>
+            </fieldset>
+
+            {/* Section 3: Capacity & Pricing */}
+            <fieldset className="form-section-fieldset">
+              <legend className="form-section-legend">
+                <span className="legend-step">3</span>
+                Capacity & Ticket Pricing
+              </legend>
+
+              <div className="form-row">
+                <div className="form-field">
+                  <span>Total Seat Capacity</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    required
+                    value={form.capacity}
+                    placeholder="e.g. 100"
+                    onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-field">
+                  <span>Ticket Price (₹) <small>Set 0 for free events</small></span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value={form.price}
+                    placeholder="0"
+                    onChange={(e) => setForm({ ...form, price: e.target.value })}
+                  />
+                </div>
+              </div>
+            </fieldset>
+
+            {/* Section 4: Imagery */}
+            <fieldset className="form-section-fieldset">
+              <legend className="form-section-legend">
+                <span className="legend-step">4</span>
+                Imagery (Optional)
+              </legend>
+
+              <div className="form-field">
+                <span>Event Cover Image URL</span>
+                <input
+                  type="url"
+                  value={form.imageUrl}
+                  placeholder="https://example.com/event-cover.jpg"
+                  onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+                />
+                <small>Leave empty to use the design system’s editorial fallback graphic.</small>
+              </div>
+            </fieldset>
+
+            {/* Form Actions */}
+            <div className="form-submit-row">
+              <button
+                type="submit"
+                className="button button-dark btn-lg"
+                disabled={saving}
+              >
+                {saving ? "Saving listing…" : editingId ? "Save Changes" : "Create & Submit Event"}
+              </button>
+
+              {editingId && (
+                <button
+                  type="button"
+                  className="button button-light btn-lg"
+                  onClick={cancelEdit}
+                >
+                  Cancel Edit
+                </button>
+              )}
+            </div>
+          </form>
+        </section>
+      )}
+
+      {/* TAB 3: REGISTRATIONS LIST */}
+      {activeTab === "bookings" && (
+        <section className="operations-panel">
+          <div className="operations-panel-header">
+            <div>
+              <h2>Attendee registrations</h2>
+              <p>Direct bookings recorded for your hosted events.</p>
+            </div>
           </div>
-        )}
-      </section>
-    </section>
+
+          {bookings.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🎫</div>
+              <h3>No registrations yet</h3>
+              <p>Attendee bookings will appear here as soon as tickets are reserved.</p>
+            </div>
+          ) : (
+            <div className="operations-table-wrap">
+              <table className="operations-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Attendee</th>
+                    <th>Tickets</th>
+                    <th>Status</th>
+                    <th>Booked Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bookings.map((booking) => (
+                    <tr key={booking.id}>
+                      <td>
+                        <strong>{booking.eventTitle}</strong>
+                      </td>
+                      <td>
+                        <span>{booking.attendeeName}</span>
+                      </td>
+                      <td>
+                        <span>{booking.quantity} {booking.quantity === 1 ? "ticket" : "tickets"}</span>
+                      </td>
+                      <td>
+                        <StatusBadge status={booking.bookingStatus} />
+                      </td>
+                      <td>
+                        <span>
+                          {booking.createdAt ? new Date(booking.createdAt).toLocaleDateString() : "—"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={Boolean(eventToDelete)}
+        title="Delete Event"
+        message={
+          eventToDelete
+            ? `Are you sure you want to delete “${eventToDelete.title}”? This action cannot be reversed.`
+            : ""
+        }
+        confirmText={deleting ? "Deleting…" : "Delete Event"}
+        cancelText="Cancel"
+        isDestructive={true}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setEventToDelete(null)}
+      />
+    </div>
   );
 }
 

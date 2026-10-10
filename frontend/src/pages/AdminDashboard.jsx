@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { getCategories, getCities } from "../services/events";
-import { getAdminBookings, getAdminDashboard, getAdminEvents, getAdminUsers, manageCatalog, moderateEvent, updateUserRole } from "../services/platform";
+import {
+  getAdminBookings,
+  getAdminDashboard,
+  getAdminEvents,
+  getAdminUsers,
+  manageCatalog,
+  moderateEvent,
+  updateUserRole,
+} from "../services/platform";
+import StatusBadge from "../components/StatusBadge";
+import { ConfirmModal, PromptModal } from "../components/Modal";
 
 function AdminDashboard() {
   const [summary, setSummary] = useState(null);
@@ -14,6 +25,14 @@ function AdminDashboard() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("moderation"); // 'moderation' | 'users' | 'bookings' | 'catalogs'
+
+  // Modal dialog states
+  const [moderationTarget, setModerationTarget] = useState(null); // { event, decision }
+  const [roleTarget, setRoleTarget] = useState(null); // { user, newRole }
+  const [catalogDeleteTarget, setCatalogDeleteTarget] = useState(null); // { type, item }
+  const [catalogEditTarget, setCatalogEditTarget] = useState(null); // { type, item }
+  const [actionLoading, setActionLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     const [dashboard, eventPage, userList, categoryList, cityList, bookingList] = await Promise.all([
@@ -62,150 +81,513 @@ function AdminDashboard() {
     };
   }, [status]);
 
-  async function moderate(event, decision) {
+  // Moderate Event (Approve / Reject)
+  async function confirmModerate() {
+    if (!moderationTarget) return;
+    const { event, decision } = moderationTarget;
     const action = decision === "approve" ? "approve" : "reject";
-    if (!window.confirm(`${action === "approve" ? "Approve" : "Reject"} “${event.title}”?`)) return;
     setError("");
     setMessage("");
+    setActionLoading(true);
     try {
       await moderateEvent(event.id, decision);
-      setMessage(`Event ${action === "approve" ? "approved" : "rejected"}.`);
+      setMessage(`Event “${event.title}” successfully ${action === "approve" ? "approved" : "rejected"}.`);
+      setModerationTarget(null);
       await refresh();
     } catch (requestError) {
-      setError(requestError.response?.data?.message ?? "Event status could not be changed.");
+      setError(requestError.response?.data?.message ?? "Event moderation could not be applied.");
+    } finally {
+      setActionLoading(false);
     }
   }
 
-  async function changeRole(user, role) {
-    if (role === user.role) return;
-    if (!window.confirm(`Change ${user.name} from ${user.role} to ${role}?`)) return;
+  // Change Role
+  async function confirmChangeRole() {
+    if (!roleTarget) return;
+    const { user, newRole } = roleTarget;
     setError("");
+    setMessage("");
+    setActionLoading(true);
     try {
-      await updateUserRole(user.id, role);
-      setMessage(`${user.name} is now ${role}.`);
+      await updateUserRole(user.id, newRole);
+      setMessage(`Updated ${user.name}’s role to ${newRole}.`);
+      setRoleTarget(null);
       await refresh();
     } catch (requestError) {
-      setError(requestError.response?.data?.message ?? "User role could not be changed.");
+      setError(requestError.response?.data?.message ?? "User role could not be updated.");
+    } finally {
+      setActionLoading(false);
     }
   }
 
-  async function createCatalog(type, eventObject) {
-    eventObject.preventDefault();
+  // Create Catalog Item
+  async function createCatalog(type, e) {
+    e.preventDefault();
     setError("");
     try {
-      await manageCatalog(type, "post", null, catalogName[type]);
+      await manageCatalog(type, "post", null, catalogName[type].trim());
       setCatalogName((current) => ({ ...current, [type]: "" }));
-      setMessage(`${type === "categories" ? "Category" : "City"} added.`);
+      setMessage(`${type === "categories" ? "Category" : "City"} successfully added.`);
       await refresh();
     } catch (requestError) {
-      setError(requestError.response?.data?.message ?? "Catalog item could not be added.");
+      setError(requestError.response?.data?.message ?? "Catalog item could not be created.");
     }
   }
 
-  async function editCatalog(type, item) {
-    const name = window.prompt(`Update ${type === "categories" ? "category" : "city"} name`, item.name);
-    if (name === null || !name.trim() || name.trim() === item.name) return;
+  // Edit Catalog Item
+  async function confirmEditCatalog(newName) {
+    if (!catalogEditTarget || !newName.trim()) return;
+    const { type, item } = catalogEditTarget;
     setError("");
     try {
-      await manageCatalog(type, "put", item.id, name.trim());
-      setMessage("Catalog item updated.");
+      await manageCatalog(type, "put", item.id, newName.trim());
+      setMessage(`Updated ${type === "categories" ? "category" : "city"} name to “${newName.trim()}”.`);
+      setCatalogEditTarget(null);
       await refresh();
     } catch (requestError) {
-      setError(requestError.response?.data?.message ?? "Catalog item could not be updated.");
+      setError(requestError.response?.data?.message ?? "Catalog item could not be renamed.");
     }
   }
 
-  async function deleteCatalog(type, item) {
-    if (!window.confirm(`Delete “${item.name}”? It cannot be removed while events use it.`)) return;
+  // Delete Catalog Item
+  async function confirmDeleteCatalog() {
+    if (!catalogDeleteTarget) return;
+    const { type, item } = catalogDeleteTarget;
     setError("");
+    setActionLoading(true);
     try {
       await manageCatalog(type, "delete", item.id);
-      setMessage("Catalog item deleted.");
+      setMessage(`Deleted ${type === "categories" ? "category" : "city"} “${item.name}”.`);
+      setCatalogDeleteTarget(null);
       await refresh();
     } catch (requestError) {
-      setError(requestError.response?.data?.message ?? "Catalog item could not be deleted.");
+      setError(requestError.response?.data?.message ?? "Catalog item could not be removed while events are using it.");
+    } finally {
+      setActionLoading(false);
     }
   }
 
-  if (loading) return <p className="state-message" role="status">Loading administration…</p>;
+  if (loading) {
+    return (
+      <div className="section container">
+        <p className="state-message" role="status">Loading platform administration…</p>
+      </div>
+    );
+  }
 
   return (
-    <section className="section dashboard-page admin-dashboard">
-      <span className="eyebrow">PLATFORM ADMINISTRATION</span>
-      <h1>Keep things <em>happening.</em></h1>
-      {error && <p className="error-message" role="alert">{error}</p>}
-      {message && <p className="success-message" role="status">{message}</p>}
-      <div className="dashboard-stat-grid">
-        <article><span>Users</span><strong>{summary?.users ?? 0}</strong></article>
-        <article><span>Organizers</span><strong>{summary?.organizers ?? 0}</strong></article>
-        <article><span>Events</span><strong>{summary?.events ?? 0}</strong></article>
-        <article><span>Pending review</span><strong>{summary?.pendingEvents ?? 0}</strong></article>
-        <article><span>Bookings</span><strong>{summary?.bookings ?? 0}</strong></article>
+    <div className="operations-page container">
+      {/* Workspace Header */}
+      <div className="operations-header">
+        <div>
+          <span className="eyebrow">
+            <span className="eyebrow-dot" />
+            PLATFORM OPERATIONS
+          </span>
+          <h1>System <em>Administration.</em></h1>
+          <p>Moderate submissions, manage users & roles, track registrations, and curate city catalogs.</p>
+        </div>
       </div>
 
-      <section className="dashboard-panel">
-        <div className="dashboard-panel-heading"><h2>Event approval</h2><label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{["PENDING", "APPROVED", "REJECTED", "CANCELLED"].map((value) => <option key={value}>{value}</option>)}</select></label></div>
-        {events.length === 0 ? <p>No {status.toLowerCase()} events.</p> : (
-          <div className="dashboard-list">
-            {events.map((event) => (
-              <article className="dashboard-list-row" key={event.id}>
-                <div><strong>{event.title}</strong><span>{event.cityName} · {event.date} · {event.availableSeats}/{event.capacity} seats</span></div>
-                {event.status === "PENDING" && <div className="row-actions"><button type="button" onClick={() => moderate(event, "approve")}>Approve</button><button className="danger-action" type="button" onClick={() => moderate(event, "reject")}>Reject</button></div>}
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+      {error && <div className="state-panel error-message" role="alert">{error}</div>}
+      {message && <div className="state-panel success-message" role="status">{message}</div>}
 
-      <section className="dashboard-panel">
-        <h2>User and organizer management</h2>
-        <div className="dashboard-list">
-          {users.map((user) => (
-            <article className="dashboard-list-row" key={user.id}>
-              <div><strong>{user.name}</strong><span>{user.email} · {user.phone}</span></div>
-              <label className="role-selector">Role<select value={user.role} onChange={(event) => changeRole(user, event.target.value)}>{["USER", "ORGANIZER", "ADMIN"].map((role) => <option key={role}>{role}</option>)}</select></label>
-            </article>
-          ))}
+      {/* Admin Summary KPIs */}
+      <div className="operations-kpi-grid">
+        <div className="kpi-card">
+          <span className="kpi-label">Registered Users</span>
+          <strong className="kpi-value">{summary?.users ?? 0}</strong>
+          <span className="kpi-subtext">Attendees on platform</span>
         </div>
-      </section>
 
-      <section className="dashboard-panel">
-        <h2>Booking management</h2>
-        {bookings.length === 0 ? <p>No bookings yet.</p> : (
-          <div className="dashboard-list">
-            {bookings.map((booking) => (
-              <article className="dashboard-list-row" key={booking.id}>
-                <div>
-                  <strong>{booking.eventTitle}</strong>
-                  <span>{booking.attendeeName} · {booking.eventDate} · {booking.quantity} ticket(s)</span>
-                </div>
-                <span>{booking.bookingStatus} · ₹{booking.totalAmount}</span>
-              </article>
-            ))}
+        <div className="kpi-card">
+          <span className="kpi-label">Organizers</span>
+          <strong className="kpi-value">{summary?.organizers ?? 0}</strong>
+          <span className="kpi-subtext">Approved event hosts</span>
+        </div>
+
+        <div className="kpi-card">
+          <span className="kpi-label">Total Events</span>
+          <strong className="kpi-value">{summary?.events ?? 0}</strong>
+          <span className="kpi-subtext">Created listings</span>
+        </div>
+
+        <div className="kpi-card">
+          <span className="kpi-label">Pending Review</span>
+          <strong className="kpi-value">{summary?.pendingEvents ?? 0}</strong>
+          <span className="kpi-subtext">Awaiting moderation</span>
+        </div>
+
+        <div className="kpi-card">
+          <span className="kpi-label">Platform Bookings</span>
+          <strong className="kpi-value">{summary?.bookings ?? 0}</strong>
+          <span className="kpi-subtext">All-time reservations</span>
+        </div>
+      </div>
+
+      {/* Segmented Navigation Tabs */}
+      <div className="operations-tabs" role="tablist" aria-label="Administration sections">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "moderation"}
+          className={`tab-btn ${activeTab === "moderation" ? "is-active" : ""}`}
+          onClick={() => setActiveTab("moderation")}
+        >
+          Event Moderation ({events.length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "users"}
+          className={`tab-btn ${activeTab === "users" ? "is-active" : ""}`}
+          onClick={() => setActiveTab("users")}
+        >
+          Users & Roles ({users.length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "bookings"}
+          className={`tab-btn ${activeTab === "bookings" ? "is-active" : ""}`}
+          onClick={() => setActiveTab("bookings")}
+        >
+          All Bookings ({bookings.length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "catalogs"}
+          className={`tab-btn ${activeTab === "catalogs" ? "is-active" : ""}`}
+          onClick={() => setActiveTab("catalogs")}
+        >
+          Catalogs & Cities
+        </button>
+      </div>
+
+      {/* TAB 1: EVENT MODERATION */}
+      {activeTab === "moderation" && (
+        <section className="operations-panel">
+          <div className="operations-panel-header">
+            <div>
+              <h2>Event Moderation Queue</h2>
+              <p>Review submitted events to ensure quality standards and accurate venue details.</p>
+            </div>
+            <div className="filter-select-inline">
+              <label htmlFor="moderation-status">Status:</label>
+              <select
+                id="moderation-status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                {["PENDING", "APPROVED", "REJECTED", "CANCELLED"].map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
           </div>
-        )}
-      </section>
 
-      {[["categories", categories], ["cities", cities]].map(([type, items]) => (
-        <section className="dashboard-panel" key={type}>
-          <h2>{type === "categories" ? "Category management" : "City management"}</h2>
-          <form className="catalog-form" onSubmit={(event) => createCatalog(type, event)}>
-            <label>{type === "categories" ? "New category" : "New city"}
-              <input required maxLength="100" value={catalogName[type]} onChange={(event) => setCatalogName((current) => ({ ...current, [type]: event.target.value }))} />
-            </label>
-            <button className="button button-dark">Add</button>
-          </form>
-          <div className="catalog-list">
-            {items.map((item) => (
-              <div className="catalog-row" key={item.id}>
-                <span>{item.name}</span>
-                <div className="row-actions"><button type="button" onClick={() => editCatalog(type, item)}>Edit</button><button className="danger-action" type="button" onClick={() => deleteCatalog(type, item)}>Delete</button></div>
-              </div>
-            ))}
+          {events.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">✓</div>
+              <h3>Queue is clear</h3>
+              <p>No events found with status “{status}”.</p>
+            </div>
+          ) : (
+            <div className="operations-table-wrap">
+              <table className="operations-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>City & Date</th>
+                    <th>Capacity</th>
+                    <th>Status</th>
+                    <th className="th-actions">Decision</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((ev) => (
+                    <tr key={ev.id}>
+                      <td>
+                        <strong className="table-title">
+                          <Link to={`/events/${ev.id}`}>{ev.title}</Link>
+                        </strong>
+                        <span className="table-sub">{ev.venue}</span>
+                      </td>
+                      <td>
+                        <span>{ev.cityName || "City"}</span>
+                        <span className="table-sub">{ev.date}</span>
+                      </td>
+                      <td>
+                        <span>{ev.availableSeats} / {ev.capacity} seats</span>
+                        <span className="table-sub">
+                          {Number(ev.price) === 0 ? "Free" : `₹${ev.price}`}
+                        </span>
+                      </td>
+                      <td>
+                        <StatusBadge status={ev.status} />
+                      </td>
+                      <td>
+                        {ev.status === "PENDING" ? (
+                          <div className="table-action-group">
+                            <button
+                              type="button"
+                              className="button button-dark btn-sm"
+                              onClick={() => setModerationTarget({ event: ev, decision: "approve" })}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="button btn-danger btn-sm"
+                              onClick={() => setModerationTarget({ event: ev, decision: "reject" })}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="table-sub">Decided</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* TAB 2: USERS & ROLES */}
+      {activeTab === "users" && (
+        <section className="operations-panel">
+          <div className="operations-panel-header">
+            <div>
+              <h2>User Management & Access Control</h2>
+              <p>Promote users to Organizers or Administrators across the platform.</p>
+            </div>
+          </div>
+
+          <div className="operations-table-wrap">
+            <table className="operations-table">
+              <thead>
+                <tr>
+                  <th>User Identity</th>
+                  <th>Contact Information</th>
+                  <th>Role Assignment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.id}>
+                    <td>
+                      <strong className="table-title">{u.name}</strong>
+                      <span className="table-sub">ID: #{u.id}</span>
+                    </td>
+                    <td>
+                      <span>{u.email}</span>
+                      <span className="table-sub">{u.phone}</span>
+                    </td>
+                    <td>
+                      <select
+                        aria-label={`Role for ${u.name}`}
+                        value={u.role}
+                        className="role-dropdown-compact"
+                        onChange={(e) => {
+                          const newRole = e.target.value;
+                          if (newRole !== u.role) {
+                            setRoleTarget({ user: u, newRole });
+                          }
+                        }}
+                      >
+                        {["USER", "ORGANIZER", "ADMIN"].map((role) => (
+                          <option key={role} value={role}>{role}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
-      ))}
-    </section>
+      )}
+
+      {/* TAB 3: ALL BOOKINGS */}
+      {activeTab === "bookings" && (
+        <section className="operations-panel">
+          <div className="operations-panel-header">
+            <div>
+              <h2>Platform Reservations & Bookings</h2>
+              <p>Complete history of ticket sales and reservations made on the platform.</p>
+            </div>
+          </div>
+
+          {bookings.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🎫</div>
+              <h3>No bookings recorded yet</h3>
+              <p>Registered attendee tickets will appear here.</p>
+            </div>
+          ) : (
+            <div className="operations-table-wrap">
+              <table className="operations-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Attendee</th>
+                    <th>Tickets & Total</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bookings.map((b) => (
+                    <tr key={b.id}>
+                      <td>
+                        <strong>{b.eventTitle}</strong>
+                        <span className="table-sub">{b.eventDate}</span>
+                      </td>
+                      <td>
+                        <span>{b.attendeeName}</span>
+                      </td>
+                      <td>
+                        <span>{b.quantity} ticket(s)</span>
+                        <span className="table-sub">₹{b.totalAmount}</span>
+                      </td>
+                      <td>
+                        <StatusBadge status={b.bookingStatus} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* TAB 4: CATALOGS & CITIES */}
+      {activeTab === "catalogs" && (
+        <div className="catalogs-dual-grid">
+          {[
+            { type: "categories", title: "Categories", items: categories, placeholder: "New category name" },
+            { type: "cities", title: "Cities", items: cities, placeholder: "New city name" },
+          ].map(({ type, title, items, placeholder }) => (
+            <section className="operations-panel" key={type}>
+              <div className="operations-panel-header">
+                <div>
+                  <h2>{title} ({items.length})</h2>
+                  <p>Curate approved discovery taxonomies.</p>
+                </div>
+              </div>
+
+              <form className="catalog-inline-form" onSubmit={(e) => createCatalog(type, e)}>
+                <input
+                  required
+                  maxLength={100}
+                  placeholder={placeholder}
+                  value={catalogName[type]}
+                  onChange={(e) => setCatalogName((cur) => ({ ...cur, [type]: e.target.value }))}
+                />
+                <button type="submit" className="button button-dark btn-sm">
+                  + Add
+                </button>
+              </form>
+
+              <div className="catalog-items-list">
+                {items.map((item) => (
+                  <div className="catalog-item-row" key={item.id}>
+                    <span className="catalog-item-name">{item.name}</span>
+                    <div className="table-action-group">
+                      <button
+                        type="button"
+                        className="button button-light btn-sm"
+                        onClick={() => setCatalogEditTarget({ type, item })}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="button btn-danger btn-sm"
+                        onClick={() => setCatalogDeleteTarget({ type, item })}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {/* MODAL 1: Moderation Confirmation */}
+      <ConfirmModal
+        isOpen={Boolean(moderationTarget)}
+        title={moderationTarget?.decision === "approve" ? "Approve Event" : "Reject Event"}
+        message={
+          moderationTarget
+            ? `Are you sure you want to ${moderationTarget.decision === "approve" ? "approve" : "reject"} “${moderationTarget.event.title}”?`
+            : ""
+        }
+        confirmText={
+          actionLoading
+            ? "Applying…"
+            : moderationTarget?.decision === "approve"
+            ? "Yes, Approve Event"
+            : "Yes, Reject Event"
+        }
+        cancelText="Cancel"
+        isDestructive={moderationTarget?.decision === "reject"}
+        onConfirm={confirmModerate}
+        onCancel={() => setModerationTarget(null)}
+      />
+
+      {/* MODAL 2: Change Role Confirmation */}
+      <ConfirmModal
+        isOpen={Boolean(roleTarget)}
+        title="Change User Role"
+        message={
+          roleTarget
+            ? `Change role for ${roleTarget.user.name} (${roleTarget.user.email}) from ${roleTarget.user.role} to ${roleTarget.newRole}?`
+            : ""
+        }
+        confirmText={actionLoading ? "Updating…" : "Confirm Role Change"}
+        cancelText="Cancel"
+        onConfirm={confirmChangeRole}
+        onCancel={() => setRoleTarget(null)}
+      />
+
+      {/* MODAL 3: Edit Catalog Name Prompt */}
+      <PromptModal
+        isOpen={Boolean(catalogEditTarget)}
+        title={`Edit ${catalogEditTarget?.type === "categories" ? "Category" : "City"}`}
+        message="Update the public name displayed across discovery filters."
+        initialValue={catalogEditTarget?.item.name ?? ""}
+        placeholder="Enter name"
+        confirmText="Save changes"
+        cancelText="Cancel"
+        onConfirm={confirmEditCatalog}
+        onCancel={() => setCatalogEditTarget(null)}
+      />
+
+      {/* MODAL 4: Delete Catalog Confirmation */}
+      <ConfirmModal
+        isOpen={Boolean(catalogDeleteTarget)}
+        title={`Delete ${catalogDeleteTarget?.type === "categories" ? "Category" : "City"}`}
+        message={
+          catalogDeleteTarget
+            ? `Are you sure you want to delete “${catalogDeleteTarget.item.name}”? Note: It cannot be removed while existing events are associated with it.`
+            : ""
+        }
+        confirmText={actionLoading ? "Deleting…" : "Delete Item"}
+        cancelText="Cancel"
+        isDestructive={true}
+        onConfirm={confirmDeleteCatalog}
+        onCancel={() => setCatalogDeleteTarget(null)}
+      />
+    </div>
   );
 }
 
